@@ -49,4 +49,50 @@ const server = app.listen(portNum, () => {
   }
 });
 
+const io = socket(server)
+const gameState = {
+  players: {}
+}
+
+io.on('connection', (socket) => {
+  console.log("a user connected:", socket.id);
+  socket.on("disconnect", ()=>{
+    console.log("user disconnected")
+    delete gameState.players[socket.id]
+  })
+
+  socket.on('newPlayer', ()=>{
+    gameState.players[socket.id] = {
+      x: 20,
+      y: 20,
+      width: 25,
+      height: 25
+    }
+    })
+
+    socket.on("playerMovement", (playerMovement) => {
+      const player = gameState.players[socket.id]
+      
+      if(playerMovement.left && player.x > 0) {
+        player.x -= 4
+      }
+
+      if(playerMovement.right && player.x < 640 - player.width) {
+        player.x += 4
+      }
+
+      if(playerMovement.up && player.y > 0) {
+        player.y -= 4
+      }
+
+      if (playerMovement.down && player.y < 480- player.height) {
+        player.y += 4
+      }
+    })
+})
+
+setInterval(() => {
+  io.sockets.emit('state', gameState);
+}, 1000 / 60);
+
 module.exports = app; // For testing
