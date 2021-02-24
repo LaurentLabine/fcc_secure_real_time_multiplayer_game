@@ -1,54 +1,52 @@
 import Player from './Player.mjs';
 import Collectible from './Collectible.mjs';
 
+//Variables Declaration
 const socket = io();
 const canvas = document.getElementById('game-window');
 const context = canvas.getContext('2d');
-
 const mainPlayer = new Player({x: Math.floor(Math.random() * (canvas.width-10)),y: Math.floor(Math.random() * (canvas.height-10)),score: 0,id: getRandomId()})
-var collectible
-var players = []
-var emittedCollectible = false
 
+var collectible
+var direction = ""
+var players = []
+var ownrank = 0
 const height = 10
 const speed = 20
 var canCatch = true
-var direction = ""
-
-socket.emit('newPlayer', mainPlayer);
+var emittedCollectible = false
 
 //Loading images at initializationg for quicker operation later
 var collectibleDrawingGold = new Image();
-    collectibleDrawingGold.src = '../public/Images/gold-coin.png'; // can also be a remote URL e.g. http://
+    collectibleDrawingGold.src = 'https://github.com/LaurentLabine/fcc_secure_real_time_multiplayer_game/raw/master/public/Images/gold-coin.png'; // can also be a remote URL e.g. http://
 var collectibleDrawingSilver = new Image();
-    collectibleDrawingSilver.src = '../public/Images/silver-coin.png'; // can also be a remote URL e.g. http://
+    collectibleDrawingSilver.src = 'https://github.com/LaurentLabine/fcc_secure_real_time_multiplayer_game/raw/master/public/Images/silver-coin.png'; // can also be a remote URL e.g. http://
 var collectibleDrawingBronze = new Image();
-    collectibleDrawingBronze.src = '../public/Images/bronze-coin.png'; // can also be a remote URL e.g. http://
+    collectibleDrawingBronze.src = 'https://github.com/LaurentLabine/fcc_secure_real_time_multiplayer_game/raw/master/public/Images/bronze-coin.png'; // can also be a remote URL e.g. http://
 var mainPlayerDrawing = new Image();
-    mainPlayerDrawing.src = '../public/Images/main-player.png'
+    mainPlayerDrawing.src = 'https://github.com/LaurentLabine/fcc_secure_real_time_multiplayer_game/raw/master/public/Images/main-player.png'
 var otherPlayerDrawing = new Image();
-    otherPlayerDrawing.src = '../public/Images/other-player.png'
+    otherPlayerDrawing.src = 'https://github.com/LaurentLabine/fcc_secure_real_time_multiplayer_game/raw/master/public/Images/other-player.png'
+
+socket.emit('newPlayer', mainPlayer);
 
 
-//Rendering Method acccording to gameState
 const render = (gameState) => {
-
     context.clearRect(0, 0, 640, 480);
-
-    //Drawing Collectible
+    //Drawing collectible
     if(gameState.collectible){
         switch(gameState.collectible.value){
             case 1:
-                context.drawImage(collectibleDrawingBronze, gameState.collectible.x, gameState.collectible.y)
+            context.drawImage(collectibleDrawingBronze, gameState.collectible.x, gameState.collectible.y)
             break;
             case 2:
-                context.drawImage(collectibleDrawingSilver, gameState.collectible.x, gameState.collectible.y)
+            context.drawImage(collectibleDrawingSilver, gameState.collectible.x, gameState.collectible.y)
             break
             case 3:
-                context.drawImage(collectibleDrawingGold, gameState.collectible.x, gameState.collectible.y)
+            context.drawImage(collectibleDrawingGold, gameState.collectible.x, gameState.collectible.y)
             break;
             default:
-                console.log("Collectible Exception")
+                console.log("Collectible Exception Detected")
             break
         }
     }
@@ -59,36 +57,52 @@ const render = (gameState) => {
             context.drawImage(mainPlayerDrawing, gameState.players[player].x, gameState.players[player].y)
         else
             context.drawImage(otherPlayerDrawing, gameState.players[player].x, gameState.players[player].y)
-    
-    //Rank indication
+
+    //Drawing Rank
     context.font = "40pt Calibri";
-    if(players.length)
-        context.fillText(mainPlayer.calculateRank(players), 400, 50);
+    context.fillText(ownrank, 400, 50);
 }
+
+function getRandomInt(max) {
+    return Math.floor(Math.random() * Math.floor(max));
+    }
 
 socket.on("state", (gameState)=>{
     if(!gameState)
         return
     
-    if(!gameState.collectible && gameState.lobbyLeader == mainPlayer.id && !emittedCollectible){//if no collectible{
+    if(!gameState.collectible && gameState.lobbyLeader == mainPlayer.id && !emittedCollectible){//if no collectible, emit a new one
         socket.emit("newCollectible", new Collectible({x:getRandomInt(canvas.width-40),y: getRandomInt(canvas.height-40), value: getRandomInt(3)+1, id: getRandomId()}))
         emittedCollectible = true
-        setInterval(()=> { //Added a delay of a second here before re enabling to summon a new collectible to fix bug where multiple ones would be created
+
+        //Adding a delay to prevent firing new collectible twice in between completion of new collectible event
+        setInterval(()=> {
             emittedCollectible = false}
             , 1000)
     }
     else
         collectible = gameState.collectible
 
+    if(players.length)
+        ownrank = mainPlayer.calculateRank(players)
+
     if(collectible)
         if(mainPlayer.collision(collectible) && canCatch){
             socket.emit("collectibleCaught", {id: mainPlayer.id, value: collectible.value})
             canCatch = false
-            setInterval(()=> { //Added a delay of a second to prevent multiple catch on same event
+            //Adding a delay to prevent firing collectible caught twice in between caught and event ran
+            setInterval(()=> {
                 canCatch = true}
                 , 1000)
         }
 
+    //Was faced with either reorganizing my players collection on server side as an array instead of a collection of object or implement a "patch"
+    //to maintain my players array.  Opted for this as it makes sense for me at this time to keep a socket ID collection on server side.
+    if(players.length != gameState.nbPlayers){ 
+        players = []
+        for (let player in gameState.players)
+            players.push(gameState.players[player])
+    }
     render(gameState)
 })
 
@@ -106,8 +120,6 @@ const keyDownHandler = (e) => {
     mainPlayer.movePlayer(direction,speed)
 }
 
-
-//Utilities Functions
 function getRandomId() {
     var letters = '0123456789ABCDEF';
     var str = '';
@@ -117,13 +129,8 @@ function getRandomId() {
     return str;
   }
 
-  function getRandomInt(max) {
-    return Math.floor(Math.random() * Math.floor(max));
-  }
-
 setInterval(()=> {
     socket.emit("playerMoved", mainPlayer)}
     , 1000 /60)
 
 document.addEventListener('keydown', keyDownHandler, false);
-// document.addEventListener('keyup', keyUpHandler, false);
