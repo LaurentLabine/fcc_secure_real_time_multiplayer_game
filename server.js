@@ -1,8 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const expect = require('chai');
 const socket = require('socket.io');
+const nocache = require("nocache");
+const helmet = require("helmet")
 
 const fccTestingRoutes = require('./routes/fcctesting.js');
 const runner = require('./test-runner.js');
@@ -15,7 +16,16 @@ app.use('/assets', express.static(process.cwd() + '/assets'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Index page (static HTML)
+app.use(helmet.noSniff());
+app.use(helmet.xssFilter());
+app.use(nocache());
+
+app.use(function (req, res, next) {
+  res.setHeader( 'X-Powered-By', 'PHP 7.4.3' );
+  next();
+});
+
+// Index page (static HTML) 
 app.route('/')
   .get(function (req, res) {
     res.sendFile(process.cwd() + '/views/index.html');
@@ -51,48 +61,55 @@ const server = app.listen(portNum, () => {
 
 const io = socket(server)
 const gameState = {
-  players: {}
+  players: {},
+  lobbyLeader : ""
 }
 
 io.on('connection', (socket) => {
-  console.log("a user connected:", socket.id);
+  console.log("Server: a user connected:", socket.id);
+
   socket.on("disconnect", ()=>{
-    console.log("user disconnected")
+    console.log("User Disconnected")
+    if(gameState.players.length > 1)//If there are more players in there
+      if(lobbyLeader == gameState.players[socket.id].id)//And the lobby leader quits
+        lobbyLeader = gameState.players[0].id
+
     delete gameState.players[socket.id]
   })
 
-  socket.on('newPlayer', ()=>{
-    gameState.players[socket.id] = {
-      x: 20,
-      y: 20,
-      width: 25,
-      height: 25
-    }
+  socket.on('newPlayer', (player)=>{
+    console.log("Server : New joined the game!")
+    gameState.players[socket.id] = player
+    gameState.lobbyLeader = player.id
+    console.log(gameState)
     })
 
-    socket.on("playerMovement", (playerMovement) => {
-      const player = gameState.players[socket.id]
-      
-      if(playerMovement.left && player.x > 0) {
-        player.x -= 4
+    socket.on("playerMoved", (player) => { // update gameState.players array
+      if(gameState.players[socket.id]){
+        gameState.players[socket.id].x = player.x
+        gameState.players[socket.id].y = player.y
       }
+    })
 
-      if(playerMovement.right && player.x < 640 - player.width) {
-        player.x += 4
-      }
+    socket.on("newCollectible", (collectible) => { // update gameState.players array
+      console.log("New Collectible")
+      gameState.collectible = collectible
+    })
 
-      if(playerMovement.up && player.y > 0) {
-        player.y -= 4
+    socket.on("collectibleCaught", (playerandcollectible) => { // update gameState.players array
+      console.log("Collectible Caught")
+      delete gameState.collectible//Destroy Collectible
+      for (var player in gameState.players) { // Update scores
+        if (gameState.players[player].id == playerandcollectible.id)
+          gameState.players[player].score += playerandcollectible.value
+          gameState.caughtLastCollectible = playerandcollectible.id
       }
-
-      if (playerMovement.down && player.y < 480- player.height) {
-        player.y += 4
-      }
+      console.log(gameState.players)
     })
 })
 
 setInterval(() => {
   io.sockets.emit('state', gameState);
-}, 1000 / 60);
+}, 1000/60);
 
 module.exports = app; // For testing
